@@ -1,0 +1,5 @@
+websockets==10.4
+pyaudio
+grpcio
+grpcio-tools
+python-dotenv
