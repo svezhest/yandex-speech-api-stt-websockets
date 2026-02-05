@@ -1,0 +1,5 @@
+.env
+```
+YANDEX_STT_API_KEY=
+PORT=8769
+```
