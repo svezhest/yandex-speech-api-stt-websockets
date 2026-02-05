@@ -3,6 +3,8 @@ import logging
 import os
 import sys
 import json
+import struct
+import math
 from pathlib import Path
 
 import grpc
@@ -64,7 +66,9 @@ async def handle_websocket(websocket):
             async for message in websocket:
                 if len(message) == 0:
                     logger.debug("Received empty audio chunk")
-                yield stt_pb2.StreamingRequest(chunk=stt_pb2.AudioChunk(data=message))
+                else:
+                    # Directly pass through the audio data (test client sends proper int16 data)
+                    yield stt_pb2.StreamingRequest(chunk=stt_pb2.AudioChunk(data=message))
 
         async def send_result(result_type, text):
             if text and text.strip():

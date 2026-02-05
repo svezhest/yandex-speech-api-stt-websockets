@@ -53,10 +53,14 @@ async def send_audio():
                 if len(chunk) > 0:
                     print(f"📤 Sending audio chunk: {len(chunk)} bytes")
                     await websocket.send(chunk)
-                    await asyncio.sleep(0.1)  # имитация потока
+                    await asyncio.sleep(0.01)  # меньший интервал для более быстрой передачи
 
+            # Отправляем сигнал завершения (пустой чанк или специальный сигнал)
+            print("📤 Sending end signal")
+            await websocket.send(b'')  # пустой чанк для завершения
+            
             print("CloseOperation")
-            await asyncio.sleep(2)
+            await asyncio.sleep(5)
     except Exception as e:
         print(f"❌ Connection failed: {e}")
 
