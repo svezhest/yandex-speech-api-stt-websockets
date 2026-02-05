@@ -5,7 +5,9 @@ import sys
 import json
 import struct
 import math
+import wave
 from pathlib import Path
+from datetime import datetime
 
 import grpc
 import grpc.aio
@@ -24,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 YANDEX_API_KEY = os.getenv("YANDEX_STT_API_KEY")
 PORT = int(os.getenv("PORT", 8000))
+SAVE_WAV_FILES = os.getenv("SAVE_WAV_FILES", "false").lower() == "true"
 
 CHANNELS = 1
 RATE = 16000
@@ -53,6 +56,7 @@ RECOGNITION_CONFIG = stt_pb2.StreamingOptions(
 async def handle_websocket(websocket):
     logger.info("New client connected")
     channel = None
+    accumulated_audio = bytearray()  # For WAV file creation
     try:
         if not YANDEX_API_KEY:
             raise ValueError("YANDEX_STT_API_KEY is not set")
@@ -67,6 +71,10 @@ async def handle_websocket(websocket):
                 if len(message) == 0:
                     logger.debug("Received empty audio chunk")
                 else:
+                    # Accumulate audio data for WAV file creation if enabled
+                    if SAVE_WAV_FILES:
+                        accumulated_audio.extend(message)
+                    
                     # Directly pass through the audio data (test client sends proper int16 data)
                     yield stt_pb2.StreamingRequest(chunk=stt_pb2.AudioChunk(data=message))
 
@@ -76,6 +84,21 @@ async def handle_websocket(websocket):
                     payload = json.dumps({"type": result_type, "text": text})
                     await websocket.send(payload)
                     logger.info(f"Sent {result_type}: {text}")
+                    
+                    # Save WAV file when we get a final result and feature is enabled
+                    if SAVE_WAV_FILES and result_type == "final" and len(accumulated_audio) > 0:
+                        try:
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            filename = f"recorded_audio_{timestamp}.wav"
+                            with wave.open(filename, 'wb') as wav_file:
+                                wav_file.setnchannels(CHANNELS)
+                                wav_file.setsampwidth(2)  # 16-bit audio
+                                wav_file.setframerate(RATE)
+                                wav_file.writeframes(bytes(accumulated_audio))
+                            logger.info(f"Saved WAV file: {filename} ({len(accumulated_audio)} bytes)")
+                            # Note: Not clearing accumulated_audio here to handle duplicate final messages
+                        except Exception as e:
+                            logger.error(f"Failed to save WAV file: {e}")
                 except Exception as e:
                     logger.error(f"Failed to send message to client: {e}")
 

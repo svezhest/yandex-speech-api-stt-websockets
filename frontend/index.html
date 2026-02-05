@@ -473,7 +473,6 @@
                 const stream = await navigator.mediaDevices.getUserMedia({
                     audio: {
                         channelCount: 1,
-                        sampleRate: 48000,
                         echoCancellation: true,
                         noiseSuppression: true
                     }
@@ -481,25 +480,38 @@
 
                 audioStatus.textContent = 'Микрофон доступен';
 
-                // Create audio context — let browser pick native rate, we'll resample manually
-                audioContext = new (window.AudioContext || window.webkitAudioContext)()
+                // Create audio context with the same sample rate as the input stream
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Create offline context for resampling to 16000 Hz
+                const offlineContext = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 16000, 16000);
 
-                // Force 16kHz by resampling using OfflineAudioContext if needed
-                const processor = audioContext.createScriptProcessor(8192, 1, 1);
+                // Create script processor to capture audio data
+                const processor = audioContext.createScriptProcessor(4096, 1, 1);
                 processor.onaudioprocess = (event) => {
                     const inputData = event.inputBuffer.getChannelData(0);
-
-                    // Resample to exactly 16kHz (assuming input is 48kHz → ratio 3:1)
-                    const downsampled = new Int16Array(Math.floor(inputData.length / 3));
-                    for (let i = 0; i < downsampled.length; i++) {
-                        const sum = inputData[i*3] + (inputData[i*3+1] || 0) + (inputData[i*3+2] || 0);
-                        const avg = sum / 3;
-                        downsampled[i] = Math.max(-32768, Math.min(32767, avg * 32768));
+                    
+                    // Resample to 16000 Hz if needed
+                    let processedData = inputData;
+                    if (audioContext.sampleRate !== 16000) {
+                        // Simple resampling: take every Nth sample
+                        const ratio = audioContext.sampleRate / 16000;
+                        const newLength = Math.floor(inputData.length / ratio);
+                        processedData = new Float32Array(newLength);
+                        for (let i = 0; i < newLength; i++) {
+                            processedData[i] = inputData[Math.floor(i * ratio)];
+                        }
                     }
-
+                    
+                    // Convert float32 to int16 for proper PCM format
+                    const int16Array = new Int16Array(processedData.length);
+                    for (let i = 0; i < processedData.length; i++) {
+                        int16Array[i] = Math.max(-32768, Math.min(32767, processedData[i] * 32768));
+                    }
+                    
                     // Send raw Int16 buffer (linear PCM)
                     if (websocket?.readyState === WebSocket.OPEN) {
-                        websocket.send(downsampled.buffer);
+                        websocket.send(int16Array.buffer);
                     }
                 };
 
